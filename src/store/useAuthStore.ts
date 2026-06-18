@@ -8,7 +8,7 @@ import {
   type UserProfile,
 } from '../lib/auth';
 import { setAuthContext } from '../lib/session';
-import { mapAuthError, displayNameFromMeta } from '../lib/authErrors';
+import { mapAuthError, displayNameFromMeta, sleep, type SignupHints } from '../lib/authErrors';
 import { supabase } from '../lib/supabase';
 import { useStore } from './useStore';
 
@@ -52,26 +52,78 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
     .eq('id', userId)
     .maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    console.warn('[auth] fetchProfile:', error.message);
+    return null;
+  }
   return data ? mapProfile(data as ProfileRow) : null;
 }
 
-async function ensureProfileFromSession(userId: string, metadata: Record<string, unknown> | undefined) {
-  if (!supabase) return null;
-
-  let profile = await fetchProfile(userId);
-  if (profile) return profile;
-
-  const spaceType = metadata?.space_type;
-  if (spaceType !== 'user_a' && spaceType !== 'user_b') return null;
+async function createProfileViaRpc(
+  spaceType: SpaceType,
+  displayName: string
+): Promise<{ profile: UserProfile | null; error: string | null }> {
+  if (!supabase) return { profile: null, error: 'Supabase non configuré' };
 
   const { data: profileRow, error } = await supabase.rpc('complete_profile', {
-    p_display_name: displayNameFromMeta(metadata, spaceType),
+    p_display_name: displayName,
     p_space_type: spaceType,
   });
 
-  if (error || !profileRow) return null;
-  return mapProfile(profileRow as ProfileRow);
+  if (error) {
+    return { profile: null, error: mapAuthError(error.message) };
+  }
+  return {
+    profile: profileRow ? mapProfile(profileRow as ProfileRow) : null,
+    error: null,
+  };
+}
+
+async function ensureProfileFromSession(
+  userId: string,
+  metadata: Record<string, unknown> | undefined,
+  hints?: SignupHints
+): Promise<{ profile: UserProfile | null; error: string | null }> {
+  if (!supabase) return { profile: null, error: 'Supabase non configuré' };
+
+  const spaceType =
+    hints?.spaceType ??
+    (metadata?.space_type === 'user_a' || metadata?.space_type === 'user_b'
+      ? metadata.space_type
+      : null);
+
+  const displayName =
+    hints?.displayName ??
+    (spaceType ? displayNameFromMeta(metadata, spaceType) : 'Utilisateur');
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const existing = await fetchProfile(userId);
+    if (existing) return { profile: existing, error: null };
+
+    if (spaceType && attempt >= 2) {
+      const created = await createProfileViaRpc(spaceType, displayName);
+      if (created.profile) return { profile: created.profile, error: null };
+      if (created.error && attempt === 5) {
+        return { profile: null, error: created.error };
+      }
+    }
+
+    await sleep(300 + attempt * 200);
+  }
+
+  if (!spaceType) {
+    return { profile: null, error: 'Rôle (Monsieur/Madame) introuvable sur ce compte.' };
+  }
+
+  const lastTry = await createProfileViaRpc(spaceType, displayName);
+  if (lastTry.profile) return { profile: lastTry.profile, error: null };
+
+  return {
+    profile: null,
+    error:
+      lastTry.error ??
+      'Impossible de créer le profil. Exécutez le script SQL 006 dans Supabase, puis reconnectez-vous.',
+  };
 }
 
 async function fetchSlots(): Promise<{ user_a: boolean; user_b: boolean }> {
@@ -126,11 +178,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     let profile: UserProfile | null = null;
     if (session?.user) {
-      try {
-        profile = await fetchProfile(session.user.id);
-      } catch {
-        profile = null;
-      }
+      const result = await ensureProfileFromSession(session.user.id, session.user.user_metadata);
+      profile = result.profile;
     }
 
     set({ session, profile, isLoading: false });
@@ -139,11 +188,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     supabase.auth.onAuthStateChange(async (_event, nextSession) => {
       let nextProfile: UserProfile | null = null;
       if (nextSession?.user) {
-        try {
-          nextProfile = await fetchProfile(nextSession.user.id);
-        } catch {
-          nextProfile = null;
-        }
+        const result = await ensureProfileFromSession(
+          nextSession.user.id,
+          nextSession.user.user_metadata
+        );
+        nextProfile = result.profile;
       }
       setAuthContext(Boolean(nextSession && nextProfile), nextProfile?.spaceType ?? null);
       set({ session: nextSession, profile: nextProfile });
@@ -165,16 +214,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ authError: mapAuthError(error.message) });
       throw error;
     }
-    const profile = data.user
+    const profileResult = data.user
       ? await ensureProfileFromSession(data.user.id, data.user.user_metadata)
-      : null;
-    if (!profile) {
-      set({ authError: 'Profil introuvable. Réinscrivez-vous ou contactez le support.' });
+      : { profile: null, error: null };
+    if (!profileResult.profile) {
+      set({
+        authError:
+          profileResult.error ??
+          'Profil introuvable. Exécutez le script SQL 006 dans Supabase puis reconnectez-vous.',
+      });
       await supabase.auth.signOut();
       throw new Error('Profil introuvable');
     }
-    set({ session: data.session, profile });
-    applyProfileToApp(profile);
+    set({ session: data.session, profile: profileResult.profile });
+    applyProfileToApp(profileResult.profile);
     await useStore.getState().loadGoals();
   },
 
@@ -209,14 +262,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
 
-    const profile = await ensureProfileFromSession(data.user.id, data.user.user_metadata);
-    if (!profile) {
-      set({ authError: 'Profil non créé. Réessayez dans quelques secondes ou reconnectez-vous.' });
+    await supabase.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    });
+
+    const hints: SignupHints = { spaceType, displayName: label };
+    const profileResult = await ensureProfileFromSession(data.user.id, data.user.user_metadata, hints);
+
+    if (!profileResult.profile) {
+      set({
+        authError:
+          profileResult.error ??
+          'Profil non créé. Exécutez le script SQL 006 dans Supabase, puis utilisez Connexion.',
+        signupNotice: 'Votre compte existe peut-être déjà — essayez de vous connecter.',
+      });
       throw new Error('Profil non créé');
     }
 
-    set({ session: data.session, profile });
-    applyProfileToApp(profile);
+    set({ session: data.session, profile: profileResult.profile });
+    applyProfileToApp(profileResult.profile);
     await get().refreshSlots();
     await useStore.getState().loadGoals();
   },

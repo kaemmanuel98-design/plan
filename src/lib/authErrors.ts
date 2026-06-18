@@ -19,9 +19,29 @@ export function mapAuthError(message: string): string {
   if (lower.includes('non authentifié')) {
     return 'Session expirée. Réessayez de vous inscrire ou connectez-vous.';
   }
+  if (lower.includes('déjà attribué') || lower.includes('already')) {
+    return 'Ce rôle (Monsieur/Madame) est déjà pris. Choisissez l\'autre ou connectez-vous.';
+  }
+  if (lower.includes('couple est complet') || lower.includes('2 comptes')) {
+    return 'Les 2 comptes du couple existent déjà. Utilisez Connexion.';
+  }
+  if (lower.includes('profil déjà créé')) {
+    return 'Profil déjà existant. Utilisez Connexion.';
+  }
 
   return message;
 }
+
+export interface SignupHints {
+  spaceType: SpaceType;
+  displayName: string;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export { sleep };
 
 export function displayNameFromMeta(
   metadata: Record<string, unknown> | undefined,
