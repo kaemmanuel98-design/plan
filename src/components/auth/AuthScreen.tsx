@@ -60,7 +60,22 @@ export function AuthScreen() {
           <p className="text-[11px] text-aw-faint mt-4 tracking-[0.15em] uppercase">
             Votre horizon à deux
           </p>
+          <p className="text-[11px] text-aw-muted mt-2">
+            Accès réservé — 2 comptes maximum
+          </p>
         </div>
+
+        {!isSupabaseConfigured && (
+          <div
+            className="mb-6 p-4 rounded-xl text-xs text-center leading-relaxed"
+            style={{ backgroundColor: 'var(--aw-warm)', color: 'var(--aw-muted)' }}
+          >
+            Supabase n'est pas configuré sur ce déploiement.
+            <br />
+            Ajoutez <code className="text-[10px]">VITE_SUPABASE_URL</code> et{' '}
+            <code className="text-[10px]">VITE_SUPABASE_ANON_KEY</code> dans Vercel, puis redéployez.
+          </div>
+        )}
 
         <div
           className="inline-flex p-0.5 rounded-full mx-auto mb-8"
@@ -157,7 +172,9 @@ export function AuthScreen() {
           <button
             type="submit"
             className="btn-primary w-full"
-            disabled={submitting || (mode === 'signup' && coupleFull)}
+            disabled={
+              !isSupabaseConfigured || submitting || (mode === 'signup' && coupleFull)
+            }
           >
             {submitting ? '…' : mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
           </button>
