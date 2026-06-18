@@ -15,7 +15,6 @@ import { useAuthStore } from './store/useAuthStore';
 import { usePingStore } from './store/usePingStore';
 import { setupAutoThemeListener } from './store/useThemeStore';
 import { applyRecurrenceResets } from './lib/recurrence';
-import { isSupabaseConfigured } from './lib/supabase';
 
 function MainView() {
   const currentView = useStore((s) => s.currentView);
@@ -78,9 +77,9 @@ export default function App() {
     initAuth();
   }, [initAuth]);
 
-  const needsAuth = isSupabaseConfigured && !isAuthLoading && (!session || !profile);
+  const needsAuth = !isAuthLoading && (!session || !profile);
 
-  if (isSupabaseConfigured && isAuthLoading) {
+  if (isAuthLoading) {
     return (
       <div className="mobile-shell min-h-[100dvh] flex items-center justify-center">
         <p className="text-sm text-aw-faint">Chargement…</p>

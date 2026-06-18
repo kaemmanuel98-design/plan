@@ -18,6 +18,7 @@ export function AuthScreen() {
   const signIn = useAuthStore((s) => s.signIn);
   const signUp = useAuthStore((s) => s.signUp);
   const authError = useAuthStore((s) => s.authError);
+  const signupNotice = useAuthStore((s) => s.signupNotice);
   const slots = useAuthStore((s) => s.slots);
   const refreshSlots = useAuthStore((s) => s.refreshSlots);
 
@@ -94,6 +95,12 @@ export function AuthScreen() {
             </button>
           ))}
         </div>
+
+        {signupNotice && (
+          <p className="text-center text-xs text-emerald-700 dark:text-emerald-300 mb-6 px-4">
+            {signupNotice}
+          </p>
+        )}
 
         {mode === 'signup' && coupleFull && (
           <p className="text-center text-xs text-amber-700 dark:text-amber-300 mb-6 px-4">

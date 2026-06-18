@@ -8,7 +8,8 @@ import {
   type UserProfile,
 } from '../lib/auth';
 import { setAuthContext } from '../lib/session';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { mapAuthError, displayNameFromMeta } from '../lib/authErrors';
+import { supabase } from '../lib/supabase';
 import { useStore } from './useStore';
 
 interface ProfileRow {
@@ -23,6 +24,7 @@ interface AuthState {
   profile: UserProfile | null;
   isLoading: boolean;
   authError: string | null;
+  signupNotice: string | null;
   slots: { user_a: boolean; user_b: boolean };
 
   init: () => Promise<void>;
@@ -54,12 +56,30 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
   return data ? mapProfile(data as ProfileRow) : null;
 }
 
+async function ensureProfileFromSession(userId: string, metadata: Record<string, unknown> | undefined) {
+  if (!supabase) return null;
+
+  let profile = await fetchProfile(userId);
+  if (profile) return profile;
+
+  const spaceType = metadata?.space_type;
+  if (spaceType !== 'user_a' && spaceType !== 'user_b') return null;
+
+  const { data: profileRow, error } = await supabase.rpc('complete_profile', {
+    p_display_name: displayNameFromMeta(metadata, spaceType),
+    p_space_type: spaceType,
+  });
+
+  if (error || !profileRow) return null;
+  return mapProfile(profileRow as ProfileRow);
+}
+
 async function fetchSlots(): Promise<{ user_a: boolean; user_b: boolean }> {
   if (!supabase) return { user_a: false, user_b: false };
-  const { data, error } = await supabase.from('profiles').select('space_type');
-  if (error) return { user_a: false, user_b: false };
-  const types = new Set((data ?? []).map((r) => r.space_type as SpaceType));
-  return { user_a: types.has('user_a'), user_b: types.has('user_b') };
+  const { data, error } = await supabase.rpc('get_couple_slots');
+  if (error || !data) return { user_a: false, user_b: false };
+  const slots = data as { user_a?: boolean; user_b?: boolean };
+  return { user_a: Boolean(slots.user_a), user_b: Boolean(slots.user_b) };
 }
 
 function applyProfileToApp(profile: UserProfile | null) {
@@ -75,8 +95,9 @@ function applyProfileToApp(profile: UserProfile | null) {
 export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   profile: null,
-  isLoading: Boolean(isSupabaseConfigured),
+  isLoading: true,
   authError: null,
+  signupNotice: null,
   slots: { user_a: false, user_b: false },
 
   allowedSpaces: () => {
@@ -138,15 +159,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signIn: async (email, password) => {
     if (!supabase) return;
-    set({ authError: null });
+    set({ authError: null, signupNotice: null });
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      set({ authError: error.message });
+      set({ authError: mapAuthError(error.message) });
       throw error;
     }
-    const profile = data.user ? await fetchProfile(data.user.id) : null;
+    const profile = data.user
+      ? await ensureProfileFromSession(data.user.id, data.user.user_metadata)
+      : null;
     if (!profile) {
-      set({ authError: 'Profil introuvable. Terminez votre inscription.' });
+      set({ authError: 'Profil introuvable. Réinscrivez-vous ou contactez le support.' });
       await supabase.auth.signOut();
       throw new Error('Profil introuvable');
     }
@@ -157,27 +180,41 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signUp: async (email, password, spaceType, displayName) => {
     if (!supabase) return;
-    set({ authError: null });
+    set({ authError: null, signupNotice: null });
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const label = displayName.trim() || SPACE_ROLE_LABEL[spaceType];
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          display_name: label,
+          space_type: spaceType,
+        },
+      },
+    });
+
     if (error) {
-      set({ authError: error.message });
+      set({ authError: mapAuthError(error.message) });
       throw error;
     }
     if (!data.user) throw new Error('Inscription échouée');
 
-    const { data: profileRow, error: rpcError } = await supabase.rpc('complete_profile', {
-      p_display_name: displayName.trim() || SPACE_ROLE_LABEL[spaceType],
-      p_space_type: spaceType,
-    });
-
-    if (rpcError) {
-      set({ authError: rpcError.message });
-      await supabase.auth.signOut();
-      throw rpcError;
+    if (!data.session) {
+      set({
+        signupNotice:
+          'Compte créé ! Si la confirmation e-mail est activée, cliquez le lien reçu puis connectez-vous.',
+      });
+      await get().refreshSlots();
+      return;
     }
 
-    const profile = mapProfile(profileRow as ProfileRow);
+    const profile = await ensureProfileFromSession(data.user.id, data.user.user_metadata);
+    if (!profile) {
+      set({ authError: 'Profil non créé. Réessayez dans quelques secondes ou reconnectez-vous.' });
+      throw new Error('Profil non créé');
+    }
+
     set({ session: data.session, profile });
     applyProfileToApp(profile);
     await get().refreshSlots();
