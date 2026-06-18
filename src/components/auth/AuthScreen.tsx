@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SpaceType } from '../../types';
 import { SPACE_ROLE_LABEL } from '../../lib/auth';
+import { isValidEmail, isStrongPassword, PASSWORD_HINT } from '../../lib/sanitize';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { useAuthStore } from '../../store/useAuthStore';
 import { EmLogo } from '../brand/EmLogo';
@@ -39,6 +40,14 @@ export function AuthScreen() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidEmail(email)) {
+      useAuthStore.setState({ authError: 'Adresse e-mail invalide.' });
+      return;
+    }
+    if (mode === 'signup' && !isStrongPassword(password)) {
+      useAuthStore.setState({ authError: PASSWORD_HINT });
+      return;
+    }
     setSubmitting(true);
     try {
       if (mode === 'login') {
@@ -168,9 +177,12 @@ export function AuthScreen() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={6}
+            minLength={8}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           />
+          {mode === 'signup' && (
+            <p className="text-[10px] text-aw-faint -mt-2">{PASSWORD_HINT}</p>
+          )}
 
           {authError && (
             <p className="text-xs text-center text-amber-700 dark:text-amber-300">{authError}</p>

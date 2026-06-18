@@ -4,6 +4,7 @@ import type { Goal, GoalLevel, PillarId, SpaceType, SwotAnalysis, SmartValidatio
 import type { AppView } from '../types/premium';
 import { generateId } from '../lib/progress';
 import { celebrateMajorGoal } from '../lib/celebration';
+import { sanitizeDescription, sanitizeSwotField, sanitizeTitle } from '../lib/sanitize';
 import { applyRecurrenceResets } from '../lib/recurrence';
 import { usePingStore } from './usePingStore';
 import { isSpaceAllowed } from '../lib/auth';
@@ -379,10 +380,15 @@ export const useStore = create<AppState>()(
           spaceType: space,
           level: 'global_vision',
           pillarId: data.pillarId,
-          title: data.title,
-          description: data.description,
+          title: sanitizeTitle(data.title),
+          description: sanitizeDescription(data.description),
           completed: false,
-          swot: data.swot,
+          swot: {
+            strengths: sanitizeSwotField(data.swot.strengths),
+            weaknesses: sanitizeSwotField(data.swot.weaknesses),
+            opportunities: sanitizeSwotField(data.swot.opportunities),
+            threats: sanitizeSwotField(data.swot.threats),
+          },
           smart: data.smart,
           inspirationImageUrl: data.inspirationImageUrl,
           createdAt: now,
@@ -402,7 +408,7 @@ export const useStore = create<AppState>()(
           spaceType: parent.spaceType,
           level,
           pillarId: parent.pillarId,
-          title,
+          title: sanitizeTitle(title),
           description: '',
           completed: false,
           createdAt: now,
@@ -452,7 +458,7 @@ export const useStore = create<AppState>()(
             goal.level === 'annual' ||
             (goal.spaceType === 'shared' && goal.level === 'quarterly');
           if (isMajor) {
-            celebrateMajorGoal(goal.spaceType === 'shared');
+            void celebrateMajorGoal(goal.spaceType === 'shared');
           }
         }
 
@@ -463,7 +469,13 @@ export const useStore = create<AppState>()(
         const goal = get().goals.find((g) => g.id === id);
         if (!goal) return;
 
-        const updated: Goal = { ...goal, ...updates, updatedAt: new Date().toISOString() };
+        const safeUpdates = { ...updates };
+        if (typeof safeUpdates.title === 'string') safeUpdates.title = sanitizeTitle(safeUpdates.title);
+        if (typeof safeUpdates.description === 'string') {
+          safeUpdates.description = sanitizeDescription(safeUpdates.description);
+        }
+
+        const updated: Goal = { ...goal, ...safeUpdates, updatedAt: new Date().toISOString() };
         set((s) => ({
           goals: s.goals.map((g) => (g.id === id ? updated : g)),
         }));

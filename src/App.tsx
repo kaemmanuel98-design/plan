@@ -1,13 +1,7 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { MobileTopBar } from './components/layout/MobileTopBar';
 import { BottomNav } from './components/layout/BottomNav';
 import { Fab } from './components/layout/Fab';
-import { Dashboard } from './components/dashboard/Dashboard';
-import { FocusDay } from './components/focus/FocusDay';
-import { EisenhowerMatrix } from './components/eisenhower/EisenhowerMatrix';
-import { VisionWizard } from './components/wizard/VisionWizard';
-import { PingOverlay } from './components/encouragement/PingOverlay';
-import { EncourageButton } from './components/encouragement/EncourageButton';
 import { AuthScreen } from './components/auth/AuthScreen';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { useStore } from './store/useStore';
@@ -16,11 +10,47 @@ import { usePingStore } from './store/usePingStore';
 import { setupAutoThemeListener } from './store/useThemeStore';
 import { applyRecurrenceResets } from './lib/recurrence';
 
+const Dashboard = lazy(() =>
+  import('./components/dashboard/Dashboard').then((m) => ({ default: m.Dashboard }))
+);
+const FocusDay = lazy(() =>
+  import('./components/focus/FocusDay').then((m) => ({ default: m.FocusDay }))
+);
+const EisenhowerMatrix = lazy(() =>
+  import('./components/eisenhower/EisenhowerMatrix').then((m) => ({ default: m.EisenhowerMatrix }))
+);
+const VisionWizard = lazy(() =>
+  import('./components/wizard/VisionWizard').then((m) => ({ default: m.VisionWizard }))
+);
+const PingOverlay = lazy(() =>
+  import('./components/encouragement/PingOverlay').then((m) => ({ default: m.PingOverlay }))
+);
+const EncourageButton = lazy(() =>
+  import('./components/encouragement/EncourageButton').then((m) => ({ default: m.EncourageButton }))
+);
+
+function ViewFallback() {
+  return (
+    <div className="mobile-container py-16 text-center">
+      <p className="text-sm text-aw-faint">Chargement…</p>
+    </div>
+  );
+}
+
 function MainView() {
   const currentView = useStore((s) => s.currentView);
-  if (currentView === 'focus') return <FocusDay />;
-  if (currentView === 'eisenhower') return <EisenhowerMatrix />;
-  return <Dashboard />;
+
+  return (
+    <Suspense fallback={<ViewFallback />}>
+      {currentView === 'focus' ? (
+        <FocusDay />
+      ) : currentView === 'eisenhower' ? (
+        <EisenhowerMatrix />
+      ) : (
+        <Dashboard />
+      )}
+    </Suspense>
+  );
 }
 
 function AppShell() {
@@ -58,10 +88,12 @@ function AppShell() {
         <MainView />
       </main>
       {currentView === 'home' && <Fab />}
-      <EncourageButton />
+      <Suspense fallback={null}>
+        <EncourageButton />
+        <VisionWizard />
+        <PingOverlay />
+      </Suspense>
       <BottomNav />
-      <VisionWizard />
-      <PingOverlay />
     </div>
   );
 }

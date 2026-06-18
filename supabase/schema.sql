@@ -110,13 +110,10 @@ GROUP BY root_id;
 
 ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
 
+-- ⚠️ NE PAS utiliser les policies ci-dessous en production.
+-- Exécutez supabase/migrations/003_auth_couple.sql puis 007_security_hardening.sql
 DROP POLICY IF EXISTS "user_a_access" ON goals;
-CREATE POLICY "user_a_access" ON goals
-  FOR ALL USING (space_type IN ('user_a', 'shared'));
-
 DROP POLICY IF EXISTS "user_b_access" ON goals;
-CREATE POLICY "user_b_access" ON goals
-  FOR ALL USING (space_type IN ('user_b', 'shared'));
 
 CREATE TABLE IF NOT EXISTS profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,

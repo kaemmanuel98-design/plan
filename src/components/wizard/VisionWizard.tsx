@@ -6,6 +6,8 @@ import { SwotMatrix } from '../ui/SwotMatrix';
 import { PILLARS } from '../../data/pillars';
 import { SMART_CRITERIA } from '../../types';
 import type { PillarId, SwotAnalysis, SmartValidation } from '../../types';
+import { readImageFile } from '../../lib/imageUpload';
+import { sanitizeDescription, sanitizeTitle } from '../../lib/sanitize';
 import { useStore, defaultSmart } from '../../store/useStore';
 
 const STEPS = ['Définition & Pilier', 'Analyse SWOT', 'Validation SMART'];
@@ -28,6 +30,7 @@ export function VisionWizard() {
   });
   const [smart, setSmart] = useState<SmartValidation>({ ...defaultSmart });
   const [inspirationImageUrl, setInspirationImageUrl] = useState<string | undefined>();
+  const [imageError, setImageError] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
@@ -38,6 +41,7 @@ export function VisionWizard() {
     setSwot({ strengths: '', weaknesses: '', opportunities: '', threats: '' });
     setSmart({ ...defaultSmart });
     setInspirationImageUrl(undefined);
+    setImageError(null);
   };
 
   const handleClose = () => {
@@ -54,8 +58,8 @@ export function VisionWizard() {
 
   const handleSubmit = () => {
     createVision(currentSpace, {
-      title,
-      description,
+      title: sanitizeTitle(title),
+      description: sanitizeDescription(description),
       pillarId,
       swot,
       smart,
@@ -146,15 +150,23 @@ export function VisionWizard() {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => setInspirationImageUrl(reader.result as string);
-                    reader.readAsDataURL(file);
+                    setImageError(null);
+                    const dataUrl = await readImageFile(file);
+                    if (!dataUrl) {
+                      setImageError('Image invalide ou trop lourde (max 800 Ko).');
+                      e.target.value = '';
+                      return;
+                    }
+                    setInspirationImageUrl(dataUrl);
                     e.target.value = '';
                   }}
                 />
+                {imageError && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1">{imageError}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm text-aw-muted mb-3 font-medium">Pilier de vie</label>

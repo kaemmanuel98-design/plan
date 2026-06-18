@@ -12,6 +12,8 @@ import { mapAuthError, displayNameFromMeta, sleep, type SignupHints } from '../l
 import { supabase } from '../lib/supabase';
 import { useStore } from './useStore';
 
+let authSubscription: { unsubscribe: () => void } | null = null;
+
 interface ProfileRow {
   id: string;
   display_name: string;
@@ -185,25 +187,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ session, profile, isLoading: false });
     applyProfileToApp(profile);
 
-    supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      let nextProfile: UserProfile | null = null;
-      if (nextSession?.user) {
-        const result = await ensureProfileFromSession(
-          nextSession.user.id,
-          nextSession.user.user_metadata
-        );
-        nextProfile = result.profile;
-      }
-      setAuthContext(Boolean(nextSession && nextProfile), nextProfile?.spaceType ?? null);
-      set({ session: nextSession, profile: nextProfile });
-      applyProfileToApp(nextProfile);
-      if (nextSession) {
-        await useStore.getState().loadGoals();
-      } else {
-        useStore.getState().setGoals([]);
-      }
-      await get().refreshSlots();
-    });
+    if (!authSubscription) {
+      const { data } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+        let nextProfile: UserProfile | null = null;
+        if (nextSession?.user) {
+          const result = await ensureProfileFromSession(
+            nextSession.user.id,
+            nextSession.user.user_metadata
+          );
+          nextProfile = result.profile;
+        }
+        setAuthContext(Boolean(nextSession && nextProfile), nextProfile?.spaceType ?? null);
+        set({ session: nextSession, profile: nextProfile });
+        applyProfileToApp(nextProfile);
+        if (nextSession) {
+          await useStore.getState().loadGoals();
+        } else {
+          useStore.getState().setGoals([]);
+        }
+        await get().refreshSlots();
+      });
+      authSubscription = data.subscription;
+    }
   },
 
   signIn: async (email, password) => {

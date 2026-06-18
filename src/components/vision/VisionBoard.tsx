@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { ImagePlus, X } from 'lucide-react';
+import { readImageFile } from '../../lib/imageUpload';
 import { useStore } from '../../store/useStore';
 import type { Goal } from '../../types';
 
@@ -8,23 +9,14 @@ interface VisionBoardProps {
   editable?: boolean;
 }
 
-const MAX_IMAGE_BYTES = 800_000;
-
 export function VisionBoard({ vision, editable = false }: VisionBoardProps) {
   const updateGoal = useStore((s) => s.updateGoal);
   const inputRef = useRef<HTMLInputElement>(null);
   const imageUrl = vision.inspirationImageUrl;
 
-  const handleFile = (file: File) => {
-    if (!file.type.startsWith('image/')) return;
-    if (file.size > MAX_IMAGE_BYTES) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      updateGoal(vision.id, { inspirationImageUrl: result });
-    };
-    reader.readAsDataURL(file);
+  const handleFile = async (file: File) => {
+    const dataUrl = await readImageFile(file);
+    if (dataUrl) updateGoal(vision.id, { inspirationImageUrl: dataUrl });
   };
 
   const removeImage = (e: React.MouseEvent) => {

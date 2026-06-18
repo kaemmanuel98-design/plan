@@ -1,10 +1,13 @@
 import { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store/useStore';
 import type { SpaceType } from '../types';
 
 export function useSpaceGoals(space: SpaceType) {
-  const allGoals = useStore((s) => s.goals);
-  return useMemo(() => allGoals.filter((g) => g.spaceType === space), [allGoals, space]);
+  const goals = useStore(
+    useShallow((s) => s.goals.filter((g) => g.spaceType === space))
+  );
+  return goals;
 }
 
 export function useRootVisions(space: SpaceType) {
