@@ -110,6 +110,11 @@ export function VisionWizard() {
         >
           {step === 0 && (
             <div className="space-y-5">
+              <p className="text-xs text-aw-muted leading-relaxed rounded-xl px-3 py-2.5" style={{ backgroundColor: 'var(--aw-warm)' }}>
+                Votre vision sera déclinée automatiquement sur 2 ans : objectifs annuels,
+                semestriels, trimestriels, mensuels, hebdomadaires et quotidiens — pour suivre
+                votre progression vers le but global.
+              </p>
               <div>
                 <label className="block text-sm text-aw-muted mb-2 font-medium">Titre de la vision</label>
                 <input
@@ -263,7 +268,7 @@ export function VisionWizard() {
           </button>
         ) : (
           <button className="btn-primary flex-1" disabled={!canProceed()} onClick={handleSubmit}>
-            Créer la vision
+            Créer la planification 2 ans
             <Check className="w-4 h-4" />
           </button>
         )}

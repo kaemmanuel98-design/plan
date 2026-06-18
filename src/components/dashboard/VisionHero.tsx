@@ -2,6 +2,7 @@ import type { Goal } from '../../types';
 import { getPillar } from '../../data/pillars';
 import { ProgressRing } from '../ui/ProgressRing';
 import { VisionBoard } from '../vision/VisionBoard';
+import { PlanningCascade } from './PlanningCascade';
 import { calculateProgress } from '../../lib/progress';
 
 interface VisionHeroProps {
@@ -38,6 +39,8 @@ export function VisionHero({ vision, allGoals }: VisionHeroProps) {
 
         <ProgressRing progress={progress} color={pillar.color} size={72} stroke={4} />
       </div>
+
+      <PlanningCascade vision={vision} allGoals={allGoals} />
     </article>
   );
 }

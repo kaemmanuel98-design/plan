@@ -6,6 +6,10 @@ import { generateId } from '../lib/progress';
 import { celebrateMajorGoal } from '../lib/celebration';
 import { sanitizeDescription, sanitizeSwotField, sanitizeTitle } from '../lib/sanitize';
 import { applyRecurrenceResets } from '../lib/recurrence';
+import {
+  buildExpandedLevelsForCascade,
+  buildVisionCascadeGoals,
+} from '../lib/visionCascade';
 import { usePingStore } from './usePingStore';
 import { isSpaceAllowed } from '../lib/auth';
 import { getAuthContext } from '../lib/session';
@@ -280,6 +284,13 @@ function createDemoGoals(): Goal[] {
   ];
 }
 
+async function syncInsertMany(goals: Goal[], set: (fn: (s: AppState) => Partial<AppState>) => void) {
+  if (!isSupabaseConfigured) return;
+  for (const goal of goals) {
+    await syncInsert(goal, set);
+  }
+}
+
 async function syncInsert(goal: Goal, set: (fn: (s: AppState) => Partial<AppState>) => void) {
   if (!isSupabaseConfigured) return;
   try {
@@ -394,8 +405,17 @@ export const useStore = create<AppState>()(
           createdAt: now,
           updatedAt: now,
         };
-        set((s) => ({ goals: [...s.goals, vision], wizardOpen: false }));
+        const cascade = buildVisionCascadeGoals(vision);
+        const expandedLevels = buildExpandedLevelsForCascade(vision.id, cascade);
+
+        set((s) => ({
+          goals: [...s.goals, vision, ...cascade],
+          wizardOpen: false,
+          expandedLevels: { ...s.expandedLevels, ...expandedLevels },
+        }));
+
         await syncInsert(vision, set);
+        await syncInsertMany(cascade, set);
       },
 
       addGoal: async (parentId, level, title, extras = {}) => {

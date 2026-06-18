@@ -136,8 +136,10 @@ export function Dashboard() {
 
       {featuredVision && rootVisions.length === 1 && (
         <section>
-          <h2 className="text-[11px] text-aw-faint tracking-[0.15em] uppercase mb-4">Cascade</h2>
-          <GoalNode goal={featuredVision} allGoals={goals} compact />
+          <h2 className="text-[11px] text-aw-faint tracking-[0.15em] uppercase mb-4">
+            Planification — année à jour
+          </h2>
+          <GoalNode goal={featuredVision} allGoals={goals} />
         </section>
       )}
 
