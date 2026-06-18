@@ -401,6 +401,44 @@
     color: var(--aw-primary-fg);
   }
 
+  .ai-coach-cta--active {
+    @apply opacity-100 cursor-pointer active:scale-[0.98] transition-transform;
+  }
+
+  .plan-preview-group {
+    @apply rounded-xl border overflow-hidden;
+    border-color: var(--aw-line);
+  }
+
+  .plan-preview-group-header {
+    @apply w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm font-medium;
+    background-color: var(--aw-warm);
+  }
+
+  .plan-preview-item {
+    @apply rounded-lg p-2.5;
+    background-color: color-mix(in srgb, var(--aw-warm) 50%, var(--aw-surface));
+  }
+
+  .reminder-banner {
+    @apply mx-4 mt-2 flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-aw-black;
+    background-color: var(--aw-warm);
+    border: 1px solid var(--aw-line);
+  }
+
+  .reminder-banner--high {
+    border-color: color-mix(in srgb, var(--aw-accent) 40%, var(--aw-line));
+    background: color-mix(in srgb, var(--aw-accent) 8%, var(--aw-warm));
+  }
+
+  .reminder-banner--medium {
+    background-color: var(--aw-warm);
+  }
+
+  .reminder-dismiss {
+    @apply p-1 rounded-full opacity-60 hover:opacity-100 shrink-0;
+  }
+
   .em-logo {
     @apply inline-flex items-baseline leading-none select-none;
     font-family: Newsreader, Georgia, serif;

@@ -1,162 +1,92 @@
-import type { Goal, GoalLevel } from '../types';
+import type { Goal } from '../types';
 import { generateId, getDescendants } from './progress';
-import { sanitizeTitle } from './sanitize';
+import { sanitizeDescription, sanitizeTitle } from './sanitize';
+import { getCascadePaths } from './cascadePaths';
+import type { PlanContent } from './smartPlanGenerator';
+import { isTacticalLevel, getHorizonPosition } from './retroPlanning';
 
-interface CascadeTemplate {
-  level: GoalLevel;
-  title: string;
-  periodLabel: string;
-  description?: string;
-  children?: CascadeTemplate[];
+export function getCascadePathCount(startDate = new Date(), now = new Date()): number {
+  return getCascadePaths(startDate, now).length;
 }
 
-function trimVisionTitle(title: string): string {
-  const t = title.trim();
-  return t.length > 48 ? `${t.slice(0, 48)}…` : t;
-}
-
-/** Arbre de planification 2 ans : année → semestre → trimestre → mois → semaine → jour */
-function buildCascadeTree(visionTitle: string): CascadeTemplate[] {
-  const focus = trimVisionTitle(visionTitle);
-
-  return ([1, 2] as const).map((year) => ({
-    level: 'annual' as const,
-    title: `Année ${year} — ${focus}`,
-    periodLabel: `An ${year}`,
-    description: `Jalons de l'année ${year} vers la vision sur 2 ans.`,
-    children: ([1, 2] as const).map((semester) => ({
-      level: 'semester' as const,
-      title: `Semestre ${semester} (An ${year})`,
-      periodLabel: `An ${year} · S${semester}`,
-      description:
-        semester === 1
-          ? 'Objectifs sur 6 mois — janvier à juin.'
-          : 'Objectifs sur 6 mois — juillet à décembre.',
-      children: ([1, 2] as const).map((quarterInSem) => {
-        const quarterIndex = (year - 1) * 4 + (semester - 1) * 2 + quarterInSem;
-        return {
-          level: 'quarterly' as const,
-          title: `Trimestre ${quarterInSem} — ${focus}`,
-          periodLabel: `T${quarterIndex}`,
-          description: 'Objectifs sur 3 mois, alignés sur le semestre.',
-          children: ([1, 2, 3] as const).map((monthInQuarter) => ({
-            level: 'monthly' as const,
-            title: `Mois ${monthInQuarter} — plan d'action`,
-            periodLabel: `T${quarterIndex} · M${monthInQuarter}`,
-            description: 'Priorités du mois pour avancer vers le trimestre.',
-            children: [
-              {
-                level: 'weekly' as const,
-                title: `Semaine type — ${focus}`,
-                periodLabel: `T${quarterIndex} · M${monthInQuarter} · Hebdo`,
-                description: 'Répartition hebdomadaire des actions clés.',
-                children: [
-                  {
-                    level: 'daily' as const,
-                    title: 'Actions quotidiennes',
-                    periodLabel: 'Quotidien',
-                    description: 'Tâches du jour liées à la vision globale.',
-                  },
-                ],
-              },
-            ],
-          })),
-        };
-      }),
-    })),
-  }));
-}
-
-function walkTemplate(
-  parentId: string,
-  node: CascadeTemplate,
-  vision: Goal,
-  now: string,
-  out: Goal[]
-): void {
-  const id = generateId();
-  out.push({
-    id,
-    parentId,
-    spaceType: vision.spaceType,
-    level: node.level,
-    pillarId: vision.pillarId,
-    title: sanitizeTitle(node.title),
-    description: node.description ?? '',
-    completed: false,
-    periodLabel: node.periodLabel,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  for (const child of node.children ?? []) {
-    walkTemplate(id, child, vision, now, out);
-  }
-}
-
-/** Génère tous les objectifs enfants (86 par vision) pour la décomposition 2 ans. */
-export function buildVisionCascadeGoals(vision: Goal): Goal[] {
-  const now = new Date().toISOString();
-  const goals: Goal[] = [];
-  const tree = buildCascadeTree(vision.title);
-
-  for (const annual of tree) {
-    walkTemplate(vision.id, annual, vision, now, goals);
-  }
-
-  return goals;
-}
-
-/** Niveaux à déplier par défaut pour voir la progression. */
-export function buildExpandedLevelsForCascade(visionId: string, cascade: Goal[]): Record<string, boolean> {
-  const expanded: Record<string, boolean> = { [visionId]: true };
-  for (const g of cascade) {
-    if (g.level === 'annual' || g.level === 'semester' || g.level === 'quarterly') {
-      expanded[g.id] = true;
-    }
-  }
-  return expanded;
-}
-
-export const CASCADE_LEVEL_COUNTS: Record<GoalLevel, number> = {
-  global_vision: 1,
-  annual: 2,
-  semester: 4,
-  quarterly: 8,
-  monthly: 24,
-  weekly: 24,
-  daily: 24,
-  time_block: 0,
-};
-
-export const CASCADE_TOTAL_CHILDREN = 86;
-
-const CASCADE_LEVELS: GoalLevel[] = [
+const CASCADE_LEVELS = [
   'annual',
   'semester',
   'quarterly',
   'monthly',
   'weekly',
   'daily',
-];
+  'time_block',
+] as const;
+
+export function buildVisionCascadeGoals(
+  vision: Goal,
+  plans: Record<string, PlanContent>,
+  startDate: Date = new Date(vision.createdAt)
+): Goal[] {
+  const now = new Date();
+  const paths = getCascadePaths(startDate, now);
+  const pathToId = new Map<string, string>();
+  const goals: Goal[] = [];
+  const created = new Date().toISOString();
+
+  for (const pathNode of paths) {
+    const content = plans[pathNode.path] ?? {
+      title: `Objectif ${pathNode.periodLabel}`,
+      description: '',
+    };
+
+    const id = generateId();
+    pathToId.set(pathNode.path, id);
+
+    const parentId = pathNode.parentPath ? pathToId.get(pathNode.parentPath) ?? vision.id : vision.id;
+
+    goals.push({
+      id,
+      parentId,
+      spaceType: vision.spaceType,
+      level: pathNode.level,
+      pillarId: vision.pillarId,
+      title: sanitizeTitle(content.title),
+      description: sanitizeDescription(content.description),
+      completed: false,
+      periodLabel: pathNode.periodLabel,
+      startTime: content.startTime,
+      endTime: content.endTime,
+      createdAt: created,
+      updatedAt: created,
+    });
+  }
+
+  return goals;
+}
+
+export function buildExpandedLevelsForCascade(visionId: string, cascade: Goal[]): Record<string, boolean> {
+  const expanded: Record<string, boolean> = { [visionId]: true };
+  for (const g of cascade) {
+    if (g.level === 'annual' || g.level === 'semester' || g.level === 'quarterly' || g.level === 'monthly') {
+      expanded[g.id] = true;
+    }
+  }
+  return expanded;
+}
 
 export interface CascadeLevelStat {
-  level: GoalLevel;
+  level: (typeof CASCADE_LEVELS)[number];
   label: string;
   total: number;
   completed: number;
   percent: number;
 }
 
-const LEVEL_SHORT: Record<GoalLevel, string> = {
-  global_vision: 'Vision',
+const LEVEL_SHORT: Record<string, string> = {
   annual: 'An',
   semester: '6 mois',
   quarterly: 'Trim.',
   monthly: 'Mois',
   weekly: 'Sem.',
   daily: 'Jour',
-  time_block: 'Horaire',
+  time_block: 'Blocs',
 };
 
 export function getCascadeLevelStats(allGoals: Goal[], visionId: string): CascadeLevelStat[] {
@@ -174,4 +104,62 @@ export function getCascadeLevelStats(allGoals: Goal[], visionId: string): Cascad
       percent: total === 0 ? 0 : Math.round((completed / total) * 100),
     };
   });
+}
+
+/** Remplace les objectifs tactiques (semaine/jour/blocs) du mois en cours. */
+export function replaceTacticalCascade(
+  vision: Goal,
+  monthlyGoal: Goal,
+  allGoals: Goal[],
+  plans: Record<string, PlanContent>,
+  startDate: Date = new Date(vision.createdAt),
+  now: Date = new Date()
+): { toRemove: string[]; toAdd: Goal[] } {
+  const pos = getHorizonPosition(startDate, now);
+  const monthPath = pos.monthPath;
+  const paths = getCascadePaths(startDate, now).filter(
+    (p) => isTacticalLevel(p.level) && p.path.startsWith(`${monthPath}.`)
+  );
+
+  const toRemove = getDescendants(allGoals, monthlyGoal.id)
+    .filter((g) => isTacticalLevel(g.level))
+    .map((g) => g.id);
+
+  const pathToId = new Map<string, string>();
+  pathToId.set(monthPath, monthlyGoal.id);
+
+  const created = new Date().toISOString();
+  const toAdd: Goal[] = [];
+
+  for (const pathNode of paths) {
+    const content = plans[pathNode.path] ?? {
+      title: `Objectif ${pathNode.periodLabel}`,
+      description: '',
+    };
+    const id = generateId();
+    pathToId.set(pathNode.path, id);
+    const parentId = pathNode.parentPath ? pathToId.get(pathNode.parentPath) ?? monthlyGoal.id : monthlyGoal.id;
+
+    toAdd.push({
+      id,
+      parentId,
+      spaceType: vision.spaceType,
+      level: pathNode.level,
+      pillarId: vision.pillarId,
+      title: sanitizeTitle(content.title),
+      description: sanitizeDescription(content.description),
+      completed: false,
+      periodLabel: pathNode.periodLabel,
+      startTime: content.startTime,
+      endTime: content.endTime,
+      createdAt: created,
+      updatedAt: created,
+    });
+  }
+
+  return { toRemove, toAdd };
+}
+
+export function collectDescendantIds(goals: Goal[], rootId: string): string[] {
+  return getDescendants(goals, rootId).map((g) => g.id);
 }

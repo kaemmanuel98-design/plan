@@ -9,7 +9,12 @@ import { applyRecurrenceResets } from '../lib/recurrence';
 import {
   buildExpandedLevelsForCascade,
   buildVisionCascadeGoals,
+  replaceTacticalCascade,
 } from '../lib/visionCascade';
+import { generateVisionPlan } from '../lib/aiPlanClient';
+import { draftToPlansMap, type DraftPlanItem } from '../lib/planDraft';
+import { findCurrentMonthlyGoal } from '../lib/trajectory';
+import { useScheduleStore } from './useScheduleStore';
 import { usePingStore } from './usePingStore';
 import { isSpaceAllowed } from '../lib/auth';
 import { getAuthContext } from '../lib/session';
@@ -30,6 +35,8 @@ interface VisionWizardData {
   smart: SmartValidation;
   inspirationImageUrl?: string;
 }
+
+export type { VisionWizardData };
 
 interface AppState {
   currentSpace: SpaceType;
@@ -52,6 +59,15 @@ interface AppState {
   loadGoals: () => Promise<void>;
 
   createVision: (space: SpaceType, data: VisionWizardData) => Promise<void>;
+  generatePlanDraft: (data: VisionWizardData) => ReturnType<typeof generateVisionPlan>;
+  generatePlanDraftForVision: (visionId: string) => ReturnType<typeof generateVisionPlan>;
+  commitVisionWithPlan: (
+    space: SpaceType,
+    data: VisionWizardData,
+    draft: DraftPlanItem[]
+  ) => Promise<void>;
+  injectPlanIntoVision: (visionId: string, draft: DraftPlanItem[]) => Promise<void>;
+  recalculateVisionTrajectory: (visionId: string) => Promise<void>;
   addGoal: (
     parentId: string,
     level: GoalLevel,
@@ -384,7 +400,72 @@ export const useStore = create<AppState>()(
       },
 
       createVision: async (space, data) => {
+        const { draft } = await get().generatePlanDraft(data);
+        await get().commitVisionWithPlan(space, data, draft.items);
+      },
+
+      generatePlanDraft: async (data) => {
+        const startDate = new Date();
+        return generateVisionPlan(
+          {
+            title: sanitizeTitle(data.title),
+            description: sanitizeDescription(data.description),
+            pillarId: data.pillarId,
+            swot: data.swot,
+          },
+          { startDate }
+        );
+      },
+
+      generatePlanDraftForVision: async (visionId) => {
+        const vision = get().goals.find((g) => g.id === visionId);
+        if (!vision || vision.level !== 'global_vision') {
+          throw new Error('Vision introuvable');
+        }
+        const startDate = new Date(vision.createdAt);
+        return generateVisionPlan(
+          {
+            title: vision.title,
+            description: vision.description,
+            pillarId: vision.pillarId,
+            swot: vision.swot ?? {
+              strengths: '',
+              weaknesses: '',
+              opportunities: '',
+              threats: '',
+            },
+          },
+          { startDate }
+        );
+      },
+
+      injectPlanIntoVision: async (visionId, draft) => {
+        const vision = get().goals.find((g) => g.id === visionId);
+        if (!vision) return;
+
+        const existingChildren = get().goals.filter((g) => g.parentId === visionId);
+        if (existingChildren.length > 0) {
+          set({ syncError: 'Cette vision a déjà un plan. Supprimez les objectifs existants ou recalculez la trajectoire.' });
+          return;
+        }
+
+        const plans = draftToPlansMap(draft);
+        const startDate = new Date(vision.createdAt);
+        const cascade = buildVisionCascadeGoals(vision, plans, startDate);
+        const expandedLevels = buildExpandedLevelsForCascade(vision.id, cascade);
+
+        set((s) => ({
+          goals: [...s.goals, ...cascade],
+          expandedLevels: { ...s.expandedLevels, ...expandedLevels },
+          syncError: null,
+        }));
+
+        await syncInsertMany(cascade, set);
+      },
+
+      commitVisionWithPlan: async (space, data, draft) => {
         const now = new Date().toISOString();
+        const startDate = new Date();
         const vision: Goal = {
           id: generateId(),
           parentId: null,
@@ -405,7 +486,9 @@ export const useStore = create<AppState>()(
           createdAt: now,
           updatedAt: now,
         };
-        const cascade = buildVisionCascadeGoals(vision);
+
+        const plans = draftToPlansMap(draft);
+        const cascade = buildVisionCascadeGoals(vision, plans, startDate);
         const expandedLevels = buildExpandedLevelsForCascade(vision.id, cascade);
 
         set((s) => ({
@@ -416,6 +499,61 @@ export const useStore = create<AppState>()(
 
         await syncInsert(vision, set);
         await syncInsertMany(cascade, set);
+        useScheduleStore.getState().markBehind(vision.id, false);
+      },
+
+      recalculateVisionTrajectory: async (visionId) => {
+        const vision = get().goals.find((g) => g.id === visionId);
+        if (!vision) return;
+
+        const startDate = new Date(vision.createdAt);
+        const monthly = findCurrentMonthlyGoal(visionId, get().goals);
+        if (!monthly) return;
+
+        const { plans } = await generateVisionPlan(
+          {
+            title: vision.title,
+            description: vision.description,
+            pillarId: vision.pillarId,
+            swot: vision.swot ?? {
+              strengths: '',
+              weaknesses: '',
+              opportunities: '',
+              threats: '',
+            },
+          },
+          { startDate, tacticalOnly: true }
+        );
+
+        const { toRemove, toAdd } = replaceTacticalCascade(
+          vision,
+          monthly,
+          get().goals,
+          plans,
+          startDate
+        );
+
+        set((s) => ({
+          goals: [
+            ...s.goals.filter((g) => !toRemove.includes(g.id)),
+            ...toAdd,
+          ],
+        }));
+
+        if (isSupabaseConfigured) {
+          for (const id of toRemove) {
+            try {
+              await deleteGoalFromDb(id);
+            } catch (err) {
+              set({
+                syncError: err instanceof Error ? err.message : 'Erreur de recalcul',
+              });
+            }
+          }
+          await syncInsertMany(toAdd, set);
+        }
+
+        useScheduleStore.getState().markBehind(visionId, false);
       },
 
       addGoal: async (parentId, level, title, extras = {}) => {

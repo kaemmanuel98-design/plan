@@ -9,7 +9,7 @@ import { ProgressRing } from '../ui/ProgressRing';
 export function FocusDay() {
   const goals = useSpaceGoals(useStore((s) => s.currentSpace));
   const toggleGoal = useStore((s) => s.toggleGoal);
-  const { daily, timeBlocks, progress, total, done } = getFocusItems(goals);
+  const { daily, timeBlocks, progress, total, done, shabbat, shabbatMessage } = getFocusItems(goals);
   const date = formatFocusDate();
 
   return (
@@ -25,14 +25,25 @@ export function FocusDay() {
           </div>
           {total > 0 && <ProgressRing progress={progress} size={56} stroke={3} />}
         </div>
-        {total > 0 && (
-          <p className="text-[11px] text-aw-faint mt-3 tabular-nums">
-            {done}/{total} complété{done > 1 ? 's' : ''}
+        {shabbat ? (
+          <p className="text-[12px] text-aw-muted mt-4 leading-relaxed rounded-xl px-3 py-2.5" style={{ backgroundColor: 'var(--aw-warm)' }}>
+            {shabbatMessage}
           </p>
+        ) : (
+          total > 0 && (
+            <p className="text-[11px] text-aw-faint mt-3 tabular-nums">
+              {done}/{total} complété{done > 1 ? 's' : ''}
+            </p>
+          )
         )}
       </FadeIn>
 
-      {total === 0 ? (
+      {shabbat ? (
+        <div className="aw-card-inner !py-16 flex flex-col items-center text-center px-6">
+          <p className="aw-display text-xl">Shabbat shalom</p>
+          <p className="text-sm text-aw-muted mt-3 leading-relaxed">{shabbatMessage}</p>
+        </div>
+      ) : total === 0 ? (
         <div className="aw-card-inner !py-16 flex flex-col items-center">
           <div className="w-10 h-10 rounded-full border border-aw-line flex items-center justify-center mb-4">
             <Check className="w-4 h-4 text-aw-faint" strokeWidth={1.5} />

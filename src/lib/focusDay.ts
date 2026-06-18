@@ -1,6 +1,19 @@
 import type { Goal } from '../types';
+import { isDuringShabbat, getShabbatMessage } from './sabbath';
 
 export function getFocusItems(goals: Goal[]) {
+  if (isDuringShabbat()) {
+    return {
+      daily: [] as Goal[],
+      timeBlocks: [] as Goal[],
+      progress: 0,
+      total: 0,
+      done: 0,
+      shabbat: true as const,
+      shabbatMessage: getShabbatMessage(),
+    };
+  }
+
   const daily = goals.filter((g) => g.level === 'daily');
   const timeBlocks = goals
     .filter((g) => g.level === 'time_block')
@@ -17,6 +30,7 @@ export function getFocusItems(goals: Goal[]) {
     progress: total === 0 ? 0 : Math.round((done / total) * 100),
     total,
     done,
+    shabbat: false as const,
   };
 }
 

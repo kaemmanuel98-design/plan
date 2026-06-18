@@ -3,6 +3,7 @@ import { useStore } from '../../store/useStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { ThemeToggle } from '../ui/ThemeToggle';
+import { SabbathSettingsButton } from '../settings/SabbathSettingsButton';
 import { EmLogo } from '../brand/EmLogo';
 import { IconFocus, IconHome, IconMatrix } from '../brand/AppIcons';
 import type { AppView } from '../../types/premium';
@@ -87,6 +88,7 @@ export function MobileTopBar() {
               <LogOut className="w-3.5 h-3.5" />
             </button>
           )}
+          <SabbathSettingsButton />
           <ThemeToggle />
         </div>
       </div>

@@ -85,6 +85,17 @@ export function Dashboard() {
         </FadeIn>
       )}
 
+      {featuredVision && (
+        <FadeIn delay={0.065}>
+          <section>
+            <h2 className="text-[11px] text-aw-faint tracking-[0.15em] uppercase mb-4 flex items-center gap-2">
+              Plan d&apos;action IA — cascade 2 ans
+            </h2>
+            <GoalNode goal={featuredVision} allGoals={goals} />
+          </section>
+        </FadeIn>
+      )}
+
       <FadeIn delay={0.08}>
         <section className="space-y-4">
           <h2 className="text-[11px] text-aw-faint tracking-[0.15em] uppercase">
@@ -131,15 +142,6 @@ export function Dashboard() {
               </FadeIn>
             );
           })}
-        </section>
-      )}
-
-      {featuredVision && rootVisions.length === 1 && (
-        <section>
-          <h2 className="text-[11px] text-aw-faint tracking-[0.15em] uppercase mb-4">
-            Planification — année à jour
-          </h2>
-          <GoalNode goal={featuredVision} allGoals={goals} />
         </section>
       )}
 

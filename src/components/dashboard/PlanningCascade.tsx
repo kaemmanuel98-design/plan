@@ -18,7 +18,7 @@ export function PlanningCascade({ vision, allGoals }: PlanningCascadeProps) {
       <p className="text-[10px] text-aw-faint tracking-[0.12em] uppercase mb-3">
         Planification 2 ans — évolution par niveau
       </p>
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
         {stats.map(({ level, label, total, percent }) => (
           <div
             key={level}
@@ -32,10 +32,10 @@ export function PlanningCascade({ vision, allGoals }: PlanningCascadeProps) {
           </div>
         ))}
       </div>
-      <p className="text-[10px] text-aw-faint mt-3 leading-relaxed">
-        De la vision globale aux actions du jour : année → semestre → trimestre → mois → semaine →
-        quotidien. Modifiez chaque objectif pour coller à votre rythme.
-      </p>
+        <p className="text-[10px] text-aw-faint mt-3 leading-relaxed">
+          Rétro-planification sur 2 ans : structure complète + actions tactiques du mois en cours.
+          Modifiez chaque étape ou recalculez la trajectoire si vous prenez du retard.
+        </p>
     </div>
   );
 }

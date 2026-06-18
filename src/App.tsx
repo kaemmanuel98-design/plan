@@ -8,6 +8,8 @@ import { useStore } from './store/useStore';
 import { useAuthStore } from './store/useAuthStore';
 import { usePingStore } from './store/usePingStore';
 import { setupAutoThemeListener } from './store/useThemeStore';
+import { useReminders } from './hooks/useReminders';
+import { ReminderBanner } from './components/reminders/ReminderBanner';
 import { applyRecurrenceResets } from './lib/recurrence';
 
 const Dashboard = lazy(() =>
@@ -59,6 +61,8 @@ function AppShell() {
   const currentSpace = useStore((s) => s.currentSpace);
   const consumePingsFor = usePingStore((s) => s.consumePingsFor);
 
+  useReminders();
+
   useEffect(() => {
     loadGoals();
   }, [loadGoals]);
@@ -84,6 +88,7 @@ function AppShell() {
   return (
     <div className="mobile-shell">
       <MobileTopBar />
+      <ReminderBanner />
       <main className="mobile-scroll pb-32">
         <MainView />
       </main>
