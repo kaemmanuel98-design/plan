@@ -2,7 +2,6 @@ import type { Goal } from '../../types';
 import { getPillar } from '../../data/pillars';
 import { ProgressRing } from '../ui/ProgressRing';
 import { VisionBoard } from '../vision/VisionBoard';
-import { PlanningCascade } from './PlanningCascade';
 import { VisionPlanActions } from '../vision/VisionPlanActions';
 import { calculateProgress } from '../../lib/progress';
 import { formatCountdown } from '../../lib/trajectory';
@@ -71,8 +70,6 @@ export function VisionHero({ vision, allGoals }: VisionHeroProps) {
       </div>
 
       <VisionPlanActions vision={vision} allGoals={allGoals} />
-
-      <PlanningCascade vision={vision} allGoals={allGoals} />
     </article>
   );
 }

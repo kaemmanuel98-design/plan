@@ -6,6 +6,13 @@ import {
   shouldGenerateTimeBlocksForDay,
 } from '../src/lib/sabbath';
 import { DEFAULT_SUNSET_TIME, normalizeSunsetTime } from '../src/lib/sabbathTime';
+import {
+  generateSmartPlanMap as generateFromSrc,
+  type PlanContent,
+  type VisionPlanInput as SmartVisionInput,
+} from '../src/lib/smartPlanGenerator';
+
+export type { PlanContent };
 
 export interface VisionPlanInput {
   title: string;
@@ -15,13 +22,6 @@ export interface VisionPlanInput {
   startDate?: string;
   tacticalOnly?: boolean;
   sunsetTime?: string;
-}
-
-export interface PlanContent {
-  title: string;
-  description: string;
-  startTime?: string;
-  endTime?: string;
 }
 
 type CascadePathNode = {
@@ -156,7 +156,14 @@ DESCRIPTION : ${input.description || '—'}
 PILIER : ${PILLAR_LABELS[input.pillarId]}
 SWOT — Forces: ${input.swot.strengths || '—'} | Faiblesses: ${input.swot.weaknesses || '—'} | Opportunités: ${input.swot.opportunities || '—'} | Menaces: ${input.swot.threats || '—'}
 
-Génère un objectif CONCRET pour chaque période (rétro-planification année→jour, blocs horaires pour aujourd'hui).
+Génère un objectif CONCRET et UNIQUE pour chaque période (rétro-planification année→jour, blocs horaires pour aujourd'hui).
+
+RÈGLES TITRES (obligatoires) :
+- NE JAMAIS répéter le titre de la vision (« ${input.title} ») dans les objectifs enfants
+- Chaque titre = action spécifique (verbe + quoi faire + résultat)
+- 24 mois = 24 titres mensuels différents, progressifs vers la vision
+- Pas de doublons entre périodes
+
 Respect du sabbat : aucune tâche du vendredi soir au samedi soir ; semaine de planification dim.–ven. ; vendredi blocs avant le coucher du soleil (${sunset}).
 
 ${pathList}
@@ -166,67 +173,16 @@ title max 120 car., description max 200 car., en français.`;
 }
 
 export function generateSmartPlanMap(input: VisionPlanInput): Record<string, PlanContent> {
-  const vision = input.title.trim();
-  const short = vision.length > 42 ? `${vision.slice(0, 42)}…` : vision;
-  const startDate = input.startDate ? new Date(input.startDate) : new Date();
-  const sunset = normalizeSunsetTime(input.sunsetTime ?? DEFAULT_SUNSET_TIME);
-  const paths = enumeratePaths(startDate, new Date(), sunset);
-  const filtered = input.tacticalOnly
-    ? paths.filter((p) => p.level === 'weekly' || p.level === 'daily' || p.level === 'time_block')
-    : paths;
-  const map: Record<string, PlanContent> = {};
-
-  for (const p of filtered) {
-    switch (p.level) {
-      case 'annual':
-        map[p.path] = {
-          title: `An ${p.year} — ${p.year === 1 ? 'Lancer' : 'Atteindre'} : ${short}`,
-          description: `Jalon ${p.year === 1 ? 'de fondation' : 'de consolidation'} pour « ${vision} ».`,
-        };
-        break;
-      case 'semester':
-        map[p.path] = {
-          title: `S${p.semester} (An ${p.year}) — Objectifs 6 mois`,
-          description: `Plan semestriel aligné sur la vision « ${short} ».`,
-        };
-        break;
-      case 'quarterly':
-        map[p.path] = {
-          title: `Trimestre ${p.quarterInSem} — Actions clés`,
-          description: `Objectifs du trimestre pour progresser vers « ${short} ».`,
-        };
-        break;
-      case 'monthly':
-        map[p.path] = {
-          title: `${p.periodLabel} — Priorités`,
-          description: `Tâches du mois liées à la vision.`,
-        };
-        break;
-      case 'weekly':
-        map[p.path] = {
-          title: `Semaine ${p.weekInMonth ?? 1} — Plan d'exécution`,
-          description: `Répartition hebdomadaire pour « ${short} ».`,
-        };
-        break;
-      case 'daily':
-        map[p.path] = {
-          title: `Action du jour — ${short}`,
-          description: `Micro-tâche quotidienne vers la vision 2 ans.`,
-        };
-        break;
-      case 'time_block': {
-        const [start, end] = p.periodLabel.split('–');
-        map[p.path] = {
-          title: `${start} – ${end} : Action clé`,
-          description: `Bloc horaire dédié à la vision.`,
-          startTime: start,
-          endTime: end,
-        };
-        break;
-      }
-    }
-  }
-  return map;
+  const smartInput: SmartVisionInput = {
+    title: input.title,
+    description: input.description,
+    pillarId: input.pillarId,
+    swot: input.swot,
+  };
+  return generateFromSrc(smartInput, {
+    startDate: input.startDate ? new Date(input.startDate) : new Date(),
+    tacticalOnly: input.tacticalOnly,
+  });
 }
 
 export function getCascadePathsForInput(input: VisionPlanInput) {

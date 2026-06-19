@@ -1,8 +1,10 @@
 import type { Goal, SpaceType } from '../types';
 import { getDescendants, getChildren, calculateProgress } from './progress';
+import { getTodayTasks } from './currentFocus';
 import { isDuringShabbat } from './sabbath';
+import { showPhoneNotification } from './pushNotifications';
 
-export type ReminderKind = 'time_block' | 'morning_brief' | 'period_end' | 'trajectory';
+export type ReminderKind = 'time_block' | 'morning_brief' | 'period_end' | 'trajectory' | 'daily_focus';
 
 export interface InAppReminder {
   id: string;
@@ -43,43 +45,87 @@ function isNearPeriodEnd(now = new Date()): 'month' | 'quarter' | null {
   return null;
 }
 
+/** Actions quotidiennes et blocs horaires du jour pour l'espace courant. */
+export function getTodayActionGoals(goals: Goal[], space: SpaceType): Goal[] {
+  return goals.filter(
+    (g) =>
+      g.spaceType === space &&
+      !g.completed &&
+      (g.level === 'daily' || g.level === 'time_block')
+  );
+}
+
 export function buildMorningBrief(goals: Goal[], space: SpaceType): string | null {
   if (isDuringShabbat()) return null;
 
   const hour = new Date().getHours();
   if (hour < MORNING_HOUR || hour > 10) return null;
 
-  const spaceGoals = goals.filter((g) => g.spaceType === space);
-  const personalDaily = spaceGoals.filter((g) => g.level === 'daily' && !g.completed).length;
-  const sharedDaily = goals.filter((g) => g.spaceType === 'shared' && g.level === 'daily' && !g.completed).length;
+  const visionIds = goals
+    .filter((g) => g.spaceType === space && g.level === 'global_vision')
+    .map((g) => g.id);
+  const todayActions = getTodayTasks(goals, visionIds);
+  const dailies = todayActions.daily.filter((g) => g.spaceType === space);
+  const blocks = todayActions.timeBlocks.filter((g) => g.spaceType === space);
 
-  if (personalDaily === 0 && sharedDaily === 0) return null;
+  if (dailies.length === 0 && blocks.length === 0) return null;
 
-  const parts: string[] = [];
-  if (personalDaily > 0) {
-    parts.push(`${personalDaily} action${personalDaily > 1 ? 's' : ''} importante${personalDaily > 1 ? 's' : ''} de ton espace`);
+  const lines: string[] = [];
+  for (const d of dailies.slice(0, 2)) {
+    lines.push(`• ${d.title}`);
   }
-  if (sharedDaily > 0) {
-    parts.push(`${sharedDaily} action commune`);
+  if (blocks[0]) {
+    lines.push(`• ${blocks[0].startTime} : ${blocks[0].title.replace(/^\d{2}:\d{2}\s*–\s*\d{2}:\d{2}\s*:\s*/, '')}`);
   }
 
-  return `Aujourd'hui, ${parts.join(' et ')} t'attendent pour rester aligné sur tes 2 ans.`;
+  return lines.join('\n');
+}
+
+export function buildDailyFocusReminder(goals: Goal[], space: SpaceType): InAppReminder | null {
+  if (isDuringShabbat()) return null;
+
+  const active = findActiveTimeBlock(goals, space);
+  if (active) {
+    return {
+      id: `focus-active-${active.id}`,
+      kind: 'daily_focus',
+      title: 'À faire maintenant',
+      body: active.title,
+      urgency: 'high',
+      createdAt: Date.now(),
+    };
+  }
+
+  const visionIds = goals
+    .filter((g) => g.spaceType === space && g.level === 'global_vision')
+    .map((g) => g.id);
+  const today = getTodayTasks(goals, visionIds);
+  const dailies = today.daily.filter(
+    (g) => g.spaceType === space && !g.completed
+  );
+  if (dailies.length === 0) return null;
+
+  const next = dailies[0];
+  return {
+    id: `focus-daily-${next.id}-${todayKey()}`,
+    kind: 'daily_focus',
+    title: 'Priorité du jour',
+    body: next.title,
+    urgency: 'medium',
+    createdAt: Date.now(),
+  };
 }
 
 export function findActiveTimeBlock(goals: Goal[], space: SpaceType): Goal | null {
   if (isDuringShabbat()) return null;
 
+  const visionIds = goals
+    .filter((g) => g.spaceType === space && g.level === 'global_vision')
+    .map((g) => g.id);
+  const { timeBlocks } = getTodayTasks(goals, visionIds);
   const now = nowMinutes();
-  const blocks = goals.filter(
-    (g) =>
-      g.spaceType === space &&
-      g.level === 'time_block' &&
-      !g.completed &&
-      g.startTime &&
-      g.endTime
-  );
 
-  for (const block of blocks) {
+  for (const block of timeBlocks.filter((g) => g.spaceType === space && !g.completed && g.startTime && g.endTime)) {
     const start = parseTime(block.startTime!);
     const end = parseTime(block.endTime!);
     if (now >= start - 5 && now <= end) {
@@ -92,12 +138,16 @@ export function findActiveTimeBlock(goals: Goal[], space: SpaceType): Goal | nul
 export function findUpcomingTimeBlock(goals: Goal[], space: SpaceType): Goal | null {
   if (isDuringShabbat()) return null;
 
+  const visionIds = goals
+    .filter((g) => g.spaceType === space && g.level === 'global_vision')
+    .map((g) => g.id);
+  const { timeBlocks } = getTodayTasks(goals, visionIds);
   const now = nowMinutes();
-  const blocks = goals
+
+  const blocks = timeBlocks
     .filter(
       (g) =>
         g.spaceType === space &&
-        g.level === 'time_block' &&
         !g.completed &&
         g.startTime &&
         parseTime(g.startTime) > now &&
@@ -168,11 +218,16 @@ export function collectReminders(
     reminders.push({
       id: `morning-${space}-${key}`,
       kind: 'morning_brief',
-      title: 'Brief du matin',
+      title: 'Brief du matin — vos actions',
       body: morning,
-      urgency: 'medium',
+      urgency: 'high',
       createdAt: Date.now(),
     });
+  }
+
+  const dailyFocus = buildDailyFocusReminder(goals, space);
+  if (dailyFocus) {
+    reminders.push(dailyFocus);
   }
 
   const active = findActiveTimeBlock(goals, space);
@@ -203,21 +258,13 @@ export function collectReminders(
   return reminders;
 }
 
-export function showBrowserNotification(title: string, body: string) {
-  if (typeof Notification === 'undefined') return;
-  if (Notification.permission !== 'granted') return;
-  try {
-    new Notification(title, { body, tag: `em-${title.slice(0, 20)}` });
-  } catch {
-    /* ignore */
-  }
+export function showBrowserNotification(title: string, body: string, tag?: string) {
+  void showPhoneNotification(title, body, tag ?? `em-${title.slice(0, 24)}`);
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (typeof Notification === 'undefined') return false;
-  if (Notification.permission === 'granted') return true;
-  if (Notification.permission === 'denied') return false;
-  const result = await Notification.requestPermission();
+  const { requestNotificationPermission: req } = await import('./pushNotifications');
+  const result = await req();
   return result === 'granted';
 }
 
@@ -226,8 +273,13 @@ const notifiedIds = new Set<string>();
 export function notifyIfNew(reminder: InAppReminder) {
   if (notifiedIds.has(reminder.id)) return;
   notifiedIds.add(reminder.id);
-  if (reminder.urgency === 'high' || reminder.kind === 'morning_brief') {
-    showBrowserNotification(reminder.title, reminder.body);
+  const shouldPush =
+    reminder.urgency === 'high' ||
+    reminder.kind === 'morning_brief' ||
+    reminder.kind === 'daily_focus' ||
+    reminder.kind === 'time_block';
+  if (shouldPush) {
+    showBrowserNotification(reminder.title, reminder.body, reminder.id);
   }
 }
 

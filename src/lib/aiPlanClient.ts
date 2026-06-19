@@ -62,10 +62,15 @@ Réponds UNIQUEMENT en JSON valide :
   }
 }
 
-Règles :
+Règles STRICTES pour les titres :
+- La vision globale (« ${input.title} ») ne doit JAMAIS être recopiée mot pour mot dans les titres des objectifs enfants
+- Chaque titre = action concrète, mesurable, unique (verbe + quoi + résultat attendu)
+- 24 titres mensuels TOUS différents, progressifs sur 2 ans vers la vision
+- Titres annuels / semestriels / trimestriels : jalons spécifiques, pas de répétition
+- Quotidien : micro-action du jour (pas le titre de la vision)
+- time_block : format "HH:MM – HH:MM : activité précise"
 - title max 120 car., description max 200 car., en français
-- Chaque niveau découle logiquement du parent vers la vision
-- time_block : titre format "HH:MM – HH:MM : activité"`;
+- Chaque niveau découle logiquement du parent vers la vision sans copier-coller`;
 }
 
 export async function generateVisionPlan(

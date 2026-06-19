@@ -1,4 +1,4 @@
-import { X, Bell, Clock, Sun, AlertTriangle } from 'lucide-react';
+import { X, Bell, Clock, Sun, AlertTriangle, Target } from 'lucide-react';
 import { useReminderStore } from '../../store/useReminderStore';
 import type { ReminderKind } from '../../lib/reminders';
 
@@ -7,6 +7,7 @@ const ICONS: Record<ReminderKind, typeof Bell> = {
   morning_brief: Sun,
   period_end: AlertTriangle,
   trajectory: Bell,
+  daily_focus: Target,
 };
 
 export function ReminderBanner() {
@@ -30,7 +31,7 @@ export function ReminderBanner() {
       <Icon className="w-4 h-4 shrink-0" strokeWidth={1.5} />
       <div className="flex-1 min-w-0">
         <p className="text-[11px] font-semibold truncate">{top.title}</p>
-        <p className="text-[10px] opacity-90 line-clamp-2 leading-relaxed">{top.body}</p>
+        <p className="text-[10px] opacity-90 line-clamp-3 leading-relaxed whitespace-pre-line">{top.body}</p>
       </div>
       <button
         type="button"

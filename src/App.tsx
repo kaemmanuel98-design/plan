@@ -10,6 +10,7 @@ import { usePingStore } from './store/usePingStore';
 import { setupAutoThemeListener } from './store/useThemeStore';
 import { useReminders } from './hooks/useReminders';
 import { ReminderBanner } from './components/reminders/ReminderBanner';
+import { AppToast } from './components/ui/AppToast';
 import { applyRecurrenceResets } from './lib/recurrence';
 
 const Dashboard = lazy(() =>
@@ -99,6 +100,7 @@ function AppShell() {
         <PingOverlay />
       </Suspense>
       <BottomNav />
+      <AppToast />
     </div>
   );
 }

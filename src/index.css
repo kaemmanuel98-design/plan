@@ -355,11 +355,11 @@
   }
 
   .eisenhower-grid {
-    @apply grid grid-cols-2 gap-2;
+    @apply grid grid-cols-1 sm:grid-cols-2 gap-2;
   }
 
   .eisenhower-quadrant {
-    @apply rounded-xl border p-3 min-h-[140px] flex flex-col;
+    @apply rounded-xl border p-3 min-h-[120px] flex flex-col;
     background-color: var(--aw-surface);
   }
 
@@ -396,13 +396,36 @@
   }
 
   .ai-coach-cta {
-    @apply w-full flex items-center justify-center gap-2 min-h-[44px] rounded-full text-sm font-medium opacity-60 cursor-not-allowed;
+    @apply w-full flex items-center justify-center gap-2 min-h-[44px] rounded-full text-sm font-medium;
     background-color: var(--aw-primary-bg);
     color: var(--aw-primary-fg);
   }
 
   .ai-coach-cta--active {
-    @apply opacity-100 cursor-pointer active:scale-[0.98] transition-transform;
+    @apply opacity-100 cursor-pointer pointer-events-auto active:scale-[0.98] transition-transform;
+  }
+
+  .ai-coach-cta--active:disabled {
+    @apply opacity-70 cursor-wait;
+  }
+
+  .app-toast {
+    @apply fixed left-4 right-4 z-[60] flex items-start gap-2.5 rounded-xl px-4 py-3 shadow-lg border;
+    bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+    border-color: var(--aw-line);
+    background-color: var(--aw-surface);
+    animation: toast-in 0.25s ease-out;
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .plan-preview-group {

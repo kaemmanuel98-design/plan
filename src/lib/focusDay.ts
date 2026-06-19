@@ -1,5 +1,7 @@
 import type { Goal } from '../types';
 import { isDuringShabbat, getShabbatMessage } from './sabbath';
+import { getTodayTasks } from './currentFocus';
+import { findRootVision } from './progress';
 
 export function getFocusItems(goals: Goal[]) {
   if (isDuringShabbat()) {
@@ -14,22 +16,32 @@ export function getFocusItems(goals: Goal[]) {
     };
   }
 
-  const daily = goals.filter((g) => g.level === 'daily');
-  const timeBlocks = goals
-    .filter((g) => g.level === 'time_block')
-    .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''));
+  const visionIds = [
+    ...new Set(
+      goals
+        .filter((g) => g.level === 'global_vision')
+        .map((g) => g.id)
+    ),
+  ];
 
-  const completedDaily = daily.filter((g) => g.completed).length;
-  const completedBlocks = timeBlocks.filter((g) => g.completed).length;
-  const total = daily.length + timeBlocks.length;
-  const done = completedDaily + completedBlocks;
+  if (visionIds.length === 0) {
+    for (const g of goals) {
+      if (g.level === 'daily' || g.level === 'time_block') {
+        const root = findRootVision(goals, g.id);
+        if (root) visionIds.push(root.id);
+      }
+    }
+  }
+
+  const uniqueVisionIds = [...new Set(visionIds)];
+  const slice = getTodayTasks(goals, uniqueVisionIds);
 
   return {
-    daily,
-    timeBlocks,
-    progress: total === 0 ? 0 : Math.round((done / total) * 100),
-    total,
-    done,
+    daily: slice.daily,
+    timeBlocks: slice.timeBlocks,
+    progress: slice.progress,
+    total: slice.total,
+    done: slice.done,
     shabbat: false as const,
   };
 }

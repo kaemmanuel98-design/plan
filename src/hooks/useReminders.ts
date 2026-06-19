@@ -7,9 +7,9 @@ import { shouldShowRecalculate } from '../lib/trajectory';
 import {
   collectReminders,
   notifyIfNew,
-  requestNotificationPermission,
   resetDailyNotifications,
 } from '../lib/reminders';
+import { registerServiceWorker, requestNotificationPermission } from '../lib/pushNotifications';
 
 export function useReminders() {
   const goals = useStore((s) => s.goals);
@@ -26,6 +26,7 @@ export function useReminders() {
   }, [goals, behindFlags]);
 
   useEffect(() => {
+    void registerServiceWorker();
     void requestNotificationPermission();
   }, []);
 
@@ -40,7 +41,16 @@ export function useReminders() {
     };
 
     tick();
-    const id = window.setInterval(tick, 60_000);
-    return () => window.clearInterval(id);
+    const id = window.setInterval(tick, 30_000);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [goals, currentSpace, behindVisionIds, sunsetTime, setActive]);
 }

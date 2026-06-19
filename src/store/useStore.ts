@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Goal, GoalLevel, PillarId, SpaceType, SwotAnalysis, SmartValidation } from '../types';
 import type { AppView } from '../types/premium';
-import { generateId } from '../lib/progress';
+import { generateId, getDescendants } from '../lib/progress';
 import { celebrateMajorGoal } from '../lib/celebration';
 import { sanitizeDescription, sanitizeSwotField, sanitizeTitle } from '../lib/sanitize';
 import { applyRecurrenceResets } from '../lib/recurrence';
@@ -12,9 +12,16 @@ import {
   replaceTacticalCascade,
 } from '../lib/visionCascade';
 import { generateVisionPlan } from '../lib/aiPlanClient';
+import { generateSmartPlanMap } from '../lib/smartPlanGenerator';
 import { draftToPlansMap, type DraftPlanItem } from '../lib/planDraft';
-import { findCurrentMonthlyGoal } from '../lib/trajectory';
+import {
+  findCurrentMonthlyGoal,
+  listMonthlyGoalsInOrder,
+  type RecalculateResult,
+} from '../lib/trajectory';
+import { getHorizonPosition } from '../lib/cascadePaths';
 import { useScheduleStore } from './useScheduleStore';
+import { useToastStore } from './useToastStore';
 import { usePingStore } from './usePingStore';
 import { isSpaceAllowed } from '../lib/auth';
 import { getAuthContext } from '../lib/session';
@@ -67,7 +74,7 @@ interface AppState {
     draft: DraftPlanItem[]
   ) => Promise<void>;
   injectPlanIntoVision: (visionId: string, draft: DraftPlanItem[]) => Promise<void>;
-  recalculateVisionTrajectory: (visionId: string) => Promise<void>;
+  recalculateVisionTrajectory: (visionId: string) => Promise<RecalculateResult>;
   addGoal: (
     parentId: string,
     level: GoalLevel,
@@ -503,14 +510,43 @@ export const useStore = create<AppState>()(
       },
 
       recalculateVisionTrajectory: async (visionId) => {
+        const fail = (message: string): RecalculateResult => {
+          set({ syncError: message });
+          useToastStore.getState().show(message, 'err');
+          return { ok: false, message, added: 0, removed: 0 };
+        };
+
         const vision = get().goals.find((g) => g.id === visionId);
-        if (!vision) return;
+        if (!vision) {
+          return fail('Vision introuvable.');
+        }
+
+        const childCount = getDescendants(get().goals, visionId).length;
+        if (childCount === 0) {
+          return fail(
+            'Aucun plan en cascade. Utilisez « Générer le plan d\'action par IA » sur la carte vision.'
+          );
+        }
 
         const startDate = new Date(vision.createdAt);
-        const monthly = findCurrentMonthlyGoal(visionId, get().goals);
-        if (!monthly) return;
+        let monthly = findCurrentMonthlyGoal(visionId, get().goals);
+        if (!monthly) {
+          const monthlies = listMonthlyGoalsInOrder(get().goals, visionId);
+          if (monthlies.length > 0) {
+            const pos = getHorizonPosition(startDate);
+            monthly = monthlies[Math.min(pos.monthsFromStart, monthlies.length - 1)];
+          }
+        }
+        if (!monthly) {
+          return fail(
+            'Objectif mensuel introuvable. Régénérez le plan complet depuis la carte vision.'
+          );
+        }
 
-        const { plans } = await generateVisionPlan(
+        set({ syncError: null });
+        useToastStore.getState().show('Recalcul de la trajectoire en cours…', 'info');
+
+        const plans = generateSmartPlanMap(
           {
             title: vision.title,
             description: vision.description,
@@ -533,11 +569,29 @@ export const useStore = create<AppState>()(
           startDate
         );
 
+        if (toAdd.length === 0 && toRemove.length === 0) {
+          useScheduleStore.getState().markBehind(visionId, false);
+          const message =
+            'Planning tactique du mois en cours déjà à jour — aucun changement nécessaire.';
+          useToastStore.getState().show(message, 'ok');
+          return { ok: true, message, added: 0, removed: 0 };
+        }
+
+        const expandedPatch: Record<string, boolean> = {
+          [visionId]: true,
+          [monthly.id]: true,
+        };
+        for (const g of toAdd) {
+          if (g.level === 'weekly' || g.level === 'daily') {
+            expandedPatch[g.id] = true;
+          }
+          if (g.level === 'weekly') expandedPatch[g.parentId ?? ''] = true;
+        }
+
         set((s) => ({
-          goals: [
-            ...s.goals.filter((g) => !toRemove.includes(g.id)),
-            ...toAdd,
-          ],
+          goals: [...s.goals.filter((g) => !toRemove.includes(g.id)), ...toAdd],
+          expandedLevels: { ...s.expandedLevels, ...expandedPatch },
+          syncError: null,
         }));
 
         if (isSupabaseConfigured) {
@@ -545,15 +599,18 @@ export const useStore = create<AppState>()(
             try {
               await deleteGoalFromDb(id);
             } catch (err) {
-              set({
-                syncError: err instanceof Error ? err.message : 'Erreur de recalcul',
-              });
+              return fail(err instanceof Error ? err.message : 'Erreur de suppression Supabase');
             }
           }
           await syncInsertMany(toAdd, set);
         }
 
         useScheduleStore.getState().markBehind(visionId, false);
+
+        const message = `Trajectoire recalculée : ${toAdd.length} objectif${toAdd.length > 1 ? 's' : ''} mis à jour (${toRemove.length} remplacé${toRemove.length > 1 ? 's' : ''}).`;
+        useToastStore.getState().show(message, 'ok');
+
+        return { ok: true, message, added: toAdd.length, removed: toRemove.length };
       },
 
       addGoal: async (parentId, level, title, extras = {}) => {
