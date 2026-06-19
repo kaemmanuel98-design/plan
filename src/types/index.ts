@@ -1,5 +1,5 @@
-export type { Recurrence, AppView, ThemeMode, ResolvedTheme, EncouragementPing, PartnerActivity } from './premium';
-import type { Recurrence } from './premium';
+export type { Recurrence, AppView, ThemeMode, ResolvedTheme, EncouragementPing, PartnerActivity } from './premium.js';
+import type { Recurrence } from './premium.js';
 
 export type SpaceType = 'user_a' | 'user_b' | 'shared';
 

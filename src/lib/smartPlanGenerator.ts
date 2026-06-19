@@ -1,7 +1,7 @@
-import type { PillarId, SwotAnalysis } from '../types';
-import type { CascadePathNode } from './cascadePaths';
-import { getCascadePaths } from './cascadePaths';
-import { buildPlanTitle, dedupePlanTitles } from './planTitles';
+import type { PillarId, SwotAnalysis } from '../types/index.js';
+import type { CascadePathNode } from './cascadePaths.js';
+import { getCascadePaths } from './cascadePaths.js';
+import { buildPlanTitle, dedupePlanTitles } from './planTitles.js';
 
 export interface VisionPlanInput {
   title: string;

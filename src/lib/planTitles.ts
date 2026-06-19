@@ -1,5 +1,5 @@
-import type { PillarId } from '../types';
-import type { CascadePathNode } from './cascadePaths';
+import type { PillarId } from '../types/index.js';
+import type { CascadePathNode } from './cascadePaths.js';
 
 /** Index 0–23 du mois dans l'horizon 2 ans. */
 export function globalMonthIndex(path: CascadePathNode): number {

@@ -1,18 +1,19 @@
-import type { PillarId, SwotAnalysis } from '../src/types';
+import type { PillarId, SwotAnalysis, GoalLevel } from '../src/types/index.js';
 import {
   DEFAULT_TIME_BLOCKS,
   filterTimeBlocksForDay,
   getWeeklyPlanningDays,
   shouldGenerateTimeBlocksForDay,
-} from '../src/lib/sabbath';
-import { DEFAULT_SUNSET_TIME, normalizeSunsetTime } from '../src/lib/sabbathTime';
-import {
-  generateSmartPlanMap as generateFromSrc,
-  type PlanContent,
-  type VisionPlanInput as SmartVisionInput,
-} from '../src/lib/smartPlanGenerator';
+} from '../src/lib/sabbathCore.js';
+import { DEFAULT_SUNSET_TIME, normalizeSunsetTime } from '../src/lib/sabbathTime.js';
+import { buildPlanTitle, dedupePlanTitles } from '../src/lib/planTitles.js';
 
-export type { PlanContent };
+export interface PlanContent {
+  title: string;
+  description: string;
+  startTime?: string;
+  endTime?: string;
+}
 
 export interface VisionPlanInput {
   title: string;
@@ -24,20 +25,22 @@ export interface VisionPlanInput {
   sunsetTime?: string;
 }
 
-type CascadePathNode = {
+type ApiCascadePathNode = {
   path: string;
-  level: string;
+  parentPath: null;
+  level: GoalLevel;
   periodLabel: string;
   year: number;
   semester: number;
   quarterInSem: number;
   monthInQuarter: number;
   weekInMonth?: number;
+  dayInWeek?: number;
 };
 
-function enumeratePaths(startDate = new Date(), now = new Date(), sunsetTime = DEFAULT_SUNSET_TIME): CascadePathNode[] {
+function enumeratePaths(startDate = new Date(), now = new Date(), sunsetTime = DEFAULT_SUNSET_TIME): ApiCascadePathNode[] {
   const sunset = normalizeSunsetTime(sunsetTime);
-  const nodes: CascadePathNode[] = [];
+  const nodes: ApiCascadePathNode[] = [];
   const monthsFromStart = Math.max(
     0,
     Math.min(
@@ -57,21 +60,21 @@ function enumeratePaths(startDate = new Date(), now = new Date(), sunsetTime = D
 
   for (const year of [1, 2]) {
     const yPath = String(year);
-    nodes.push({ path: yPath, level: 'annual', periodLabel: `An ${year}`, year, semester: 0, quarterInSem: 0, monthInQuarter: 0 });
+    nodes.push({ path: yPath, parentPath: null, level: 'annual' as GoalLevel, periodLabel: `An ${year}`, year, semester: 0, quarterInSem: 0, monthInQuarter: 0 });
     for (const semester of [1, 2]) {
       const sPath = `${year}.${semester}`;
-      nodes.push({ path: sPath, level: 'semester', periodLabel: `An ${year} · S${semester}`, year, semester, quarterInSem: 0, monthInQuarter: 0 });
+      nodes.push({ path: sPath, parentPath: null, level: 'semester' as GoalLevel, periodLabel: `An ${year} · S${semester}`, year, semester, quarterInSem: 0, monthInQuarter: 0 });
       for (const quarterInSem of [1, 2]) {
         const quarterIndex = (year - 1) * 4 + (semester - 1) * 2 + quarterInSem;
         const qPath = `${sPath}.${quarterInSem}`;
-        nodes.push({ path: qPath, level: 'quarterly', periodLabel: `T${quarterIndex}`, year, semester, quarterInSem, monthInQuarter: 0 });
+        nodes.push({ path: qPath, parentPath: null, level: 'quarterly' as GoalLevel, periodLabel: `T${quarterIndex}`, year, semester, quarterInSem, monthInQuarter: 0 });
         for (const monthInQuarter of [1, 2, 3]) {
           const mPath = `${qPath}.${monthInQuarter}`;
           const d = new Date(startDate);
           d.setMonth(d.getMonth() + globalMonth);
           const calLabel = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
           const periodLabel = calLabel.charAt(0).toUpperCase() + calLabel.slice(1);
-          nodes.push({ path: mPath, level: 'monthly', periodLabel, year, semester, quarterInSem, monthInQuarter });
+          nodes.push({ path: mPath, parentPath: null, level: 'monthly' as GoalLevel, periodLabel, year, semester, quarterInSem, monthInQuarter });
           globalMonth++;
 
           const isCurrent =
@@ -85,7 +88,8 @@ function enumeratePaths(startDate = new Date(), now = new Date(), sunsetTime = D
               const wPath = `${mPath}.w${week}`;
               nodes.push({
                 path: wPath,
-                level: 'weekly',
+                parentPath: null,
+                level: 'weekly' as GoalLevel,
                 periodLabel: `${periodLabel} · Semaine ${week}`,
                 year,
                 semester,
@@ -98,20 +102,23 @@ function enumeratePaths(startDate = new Date(), now = new Date(), sunsetTime = D
                   const dPath = `${wPath}.d${day}`;
                   nodes.push({
                     path: dPath,
-                    level: 'daily',
+                    parentPath: null,
+                    level: 'daily' as GoalLevel,
                     periodLabel: `${name} — Quotidien`,
                     year,
                     semester,
                     quarterInSem,
                     monthInQuarter,
                     weekInMonth: week,
+                    dayInWeek: day,
                   });
                   if (shouldGenerateTimeBlocksForDay(day, now, sunset)) {
                     const blocks = filterTimeBlocksForDay(DEFAULT_TIME_BLOCKS, day, sunset);
                     blocks.forEach((b, i) => {
                       nodes.push({
                         path: `${dPath}.tb${i + 1}`,
-                        level: 'time_block',
+                        parentPath: null,
+                        level: 'time_block' as GoalLevel,
                         periodLabel: `${b.start}–${b.end}`,
                         year,
                         semester,
@@ -173,16 +180,37 @@ title max 120 car., description max 200 car., en français.`;
 }
 
 export function generateSmartPlanMap(input: VisionPlanInput): Record<string, PlanContent> {
-  const smartInput: SmartVisionInput = {
+  const startDate = input.startDate ? new Date(input.startDate) : new Date();
+  const sunset = normalizeSunsetTime(input.sunsetTime ?? DEFAULT_SUNSET_TIME);
+  const paths = enumeratePaths(startDate, new Date(), sunset);
+  const filtered = input.tacticalOnly
+    ? paths.filter((p) => p.level === 'weekly' || p.level === 'daily' || p.level === 'time_block')
+    : paths;
+
+  const planInput = {
     title: input.title,
     description: input.description,
     pillarId: input.pillarId,
     swot: input.swot,
   };
-  return generateFromSrc(smartInput, {
-    startDate: input.startDate ? new Date(input.startDate) : new Date(),
-    tacticalOnly: input.tacticalOnly,
+
+  const entries: [string, PlanContent][] = filtered.map((pathNode) => {
+    const { title, description } = buildPlanTitle(
+      pathNode,
+      input.pillarId,
+      input.title,
+      input.description
+    );
+
+    if (pathNode.level === 'time_block') {
+      const [startTime, endTime] = pathNode.periodLabel.split('–').map((s) => s.trim());
+      return [pathNode.path, { title, description, startTime, endTime }];
+    }
+
+    return [pathNode.path, { title, description }];
   });
+
+  return Object.fromEntries(dedupePlanTitles(entries));
 }
 
 export function getCascadePathsForInput(input: VisionPlanInput) {

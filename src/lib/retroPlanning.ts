@@ -1,11 +1,11 @@
-import type { GoalLevel } from '../types';
+import type { GoalLevel } from '../types/index.js';
 import {
   DEFAULT_TIME_BLOCKS,
   filterTimeBlocksForDay,
   getWeeklyPlanningDays,
   shouldGenerateTimeBlocksForDay,
   toPlanningWeekday,
-} from './sabbath';
+} from './sabbathCore.js';
 
 export interface CascadePathNode {
   path: string;

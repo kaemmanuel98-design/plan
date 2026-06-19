@@ -1,4 +1,4 @@
-import { buildAiPrompt, generateSmartPlanMap, getCascadePathsForInput, type VisionPlanInput } from './planShared';
+import { buildAiPrompt, generateSmartPlanMap, getCascadePathsForInput, type VisionPlanInput } from './planShared.js';
 
 export const config = {
   maxDuration: 60,

@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "types": ["node"],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": [
+    "./**/*.ts",
+    "../src/lib/sabbathCore.ts",
+    "../src/lib/sabbathTime.ts",
+    "../src/lib/planTitles.ts",
+    "../src/lib/cascadePaths.ts",
+    "../src/lib/retroPlanning.ts",
+    "../src/types/**/*.ts"
+  ]
+}
